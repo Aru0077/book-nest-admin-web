@@ -1,6 +1,6 @@
 /**
- * 全局类型定义
- * 基于Backend项目的统一响应格式
+ * 核心类型定义 - 精简版本
+ * 与后端API对齐，遵循YAGNI原则
  */
 
 // ============ API响应类型 ============
@@ -26,24 +26,6 @@ export interface ApiErrorResponse {
   }
 }
 
-// ============ 分页类型 ============
-export interface PaginationMeta {
-  page: number
-  size: number
-  total: number
-  totalPages: number
-  hasNext: boolean
-  hasPrevious: boolean
-  offset: number
-}
-
-export interface PaginatedData<T> {
-  items: T[]
-  pagination: PaginationMeta
-}
-
-export type ApiPaginatedResponse<T> = ApiResponse<PaginatedData<T>>
-
 // ============ 用户相关类型 ============
 export interface User {
   id: string
@@ -58,9 +40,13 @@ export interface User {
   lastLoginAt?: string
 }
 
-export interface MerchantUser extends User {
-  // merchant特有字段可以在这里扩展
-  role?: 'merchant'
+export interface AdminUser extends User {
+  role: 'SUPER_ADMIN' | 'ADMIN'
+  status: 'PENDING' | 'ACTIVE' | 'INACTIVE' | 'REJECTED'
+  appliedAt: string
+  approvedBy?: string
+  approvedAt?: string
+  rejectedReason?: string
 }
 
 // ============ 认证相关类型 ============
@@ -84,55 +70,35 @@ export interface TokenPair {
 }
 
 export interface LoginResponse {
-  user: MerchantUser
+  user: AdminUser
   tokens: TokenPair
 }
 
-export interface RefreshTokenRequest {
-  refreshToken: string
+// ============ 管理员审批相关类型 ============
+export interface AdminApprovalRequest {
+  adminId: string
+  decision: 'approve' | 'reject'
+  reason?: string
 }
 
-export interface RefreshTokenResponse {
-  accessToken: string
-  refreshToken: string
-  expiresIn: number
-  refreshExpiresIn: number
+export interface PendingAdmin {
+  id: string
+  email?: string
+  phone?: string
+  username?: string
+  appliedAt: string
+  role: 'ADMIN' | 'SUPER_ADMIN'
 }
 
-// ============ 表单验证类型 ============
-export interface ValidationRule {
-  required?: boolean
-  message?: string
-  validator?: (value: string) => boolean | Promise<boolean>
+export interface AdminApprovalResponse {
+  id: string
+  status: 'ACTIVE' | 'REJECTED'
+  approvedBy: string
+  approvedAt: string
+  rejectedReason?: string
 }
 
-export interface FormRules {
-  [key: string]: ValidationRule[]
-}
-
-// ============ HTTP请求类型 ============
-export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
-
-export interface RequestConfig {
-  method?: HttpMethod
-  headers?: Record<string, string>
-  params?: Record<string, unknown>
-  data?: unknown
-}
-
-// ============ 路由类型 ============
-export interface RouteConfig {
-  path: string
-  name: string
-  component: () => Promise<unknown>
-  meta?: {
-    requiresAuth?: boolean
-    title?: string
-    icon?: string
-  }
-}
-
-// ============ 通用工具类型 ============
+// ============ 基础工具类型 ============
 export type Nullable<T> = T | null
 export type Optional<T> = T | undefined
 export type ID = string | number
