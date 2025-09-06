@@ -76,8 +76,7 @@ export const parseJwtPayload = (token: string): Record<string, unknown> | null =
         .join('')
     )
     return JSON.parse(jsonPayload)
-  } catch (error) {
-    console.error('Failed to parse JWT payload:', error)
+  } catch {
     return null
   }
 }

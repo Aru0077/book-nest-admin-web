@@ -16,18 +16,17 @@ export const authGuard = async (
   next: NavigationGuardNext
 ): Promise<void> => {
   const authStore = useAuthStore()
-  
+
   if (!authStore.isAuthenticated) {
     if (hasTokens()) {
       authStore.initAuth()
-      
+
       if (authStore.isAuthenticated) {
         const accessToken = getAccessToken()
         if (accessToken && isTokenExpiringSoon(accessToken)) {
           try {
             await authStore.refreshToken()
-          } catch (error) {
-            console.error('Token refresh failed:', error)
+          } catch {
             next({
               name: 'Login',
               query: { redirect: to.fullPath }
@@ -39,14 +38,14 @@ export const authGuard = async (
         return
       }
     }
-    
+
     next({
       name: 'Login',
       query: { redirect: to.fullPath }
     })
     return
   }
-  
+
   next()
 }
 
@@ -59,12 +58,12 @@ export const guestGuard = (
   next: NavigationGuardNext
 ): void => {
   const authStore = useAuthStore()
-  
+
   if (authStore.isAuthenticated) {
     const redirectTo = (to.query.redirect as string) || '/dashboard'
     next(redirectTo)
     return
   }
-  
+
   next()
 }
