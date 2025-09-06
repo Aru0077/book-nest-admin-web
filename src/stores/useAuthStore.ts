@@ -6,16 +6,14 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed, readonly } from 'vue'
-import { HttpClient, handleApiError } from '@/services/http'
+import http from '@/services/http'
 import { API_ENDPOINTS, STORAGE_KEYS } from '@/constants'
 import type { 
   LoginRequest, 
   RegisterRequest, 
-  LoginResponse, 
   AdminUser, 
   TokenPair,
   PendingAdmin,
-  AdminApprovalRequest,
   AdminApprovalResponse
 } from '@/types'
 
@@ -37,26 +35,58 @@ export const useAuthStore = defineStore('auth', () => {
   // Actions
 
   /**
+   * 通用错误处理函数
+   */
+  const handleAuthError = (err: any, defaultMessage: string): void => {
+    const errorMessage = err.message || defaultMessage
+    error.value = errorMessage
+    isLoading.value = false
+    throw new Error(errorMessage)
+  }
+
+  /**
+   * 安全获取localStorage数据
+   */
+  const safeGetStorage = (key: string): string | null => {
+    try {
+      return localStorage.getItem(key)
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 安全解析JSON
+   */
+  const safeJsonParse = <T>(data: string): T | null => {
+    try {
+      return JSON.parse(data) as T
+    } catch {
+      return null
+    }
+  }
+
+  /**
    * 初始化认证状态 - 从localStorage恢复
    */
   const initAuth = (): void => {
-    try {
-      const storedUser = localStorage.getItem(STORAGE_KEYS.USER_INFO)
-      const storedAccessToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN)
-      const storedRefreshToken = localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN)
+    const storedUser = safeGetStorage(STORAGE_KEYS.USER_INFO)
+    const storedAccessToken = safeGetStorage(STORAGE_KEYS.ACCESS_TOKEN)
+    const storedRefreshToken = safeGetStorage(STORAGE_KEYS.REFRESH_TOKEN)
 
-      if (storedUser && storedAccessToken && storedRefreshToken) {
-        user.value = JSON.parse(storedUser)
+    if (storedUser && storedAccessToken && storedRefreshToken) {
+      const userData = safeJsonParse<AdminUser>(storedUser)
+      if (userData) {
+        user.value = userData
         tokens.value = {
           accessToken: storedAccessToken,
           refreshToken: storedRefreshToken,
-          expiresIn: 0, // 这些值在实际使用时会被刷新
+          expiresIn: 0,
           refreshExpiresIn: 0
         }
+      } else {
+        clearAuthData()
       }
-    } catch (error) {
-      console.error('Failed to restore auth state:', error)
-      clearAuthData()
     }
   }
 
@@ -68,12 +98,8 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const response = await HttpClient.post<LoginResponse>(
-        API_ENDPOINTS.AUTH.LOGIN,
-        credentials
-      )
-
-      const { user: userData, tokens: tokenData } = response.data
+      const response = await http.post(API_ENDPOINTS.AUTH.LOGIN, credentials)
+      const { user: userData, tokens: tokenData } = response.data.data
 
       // 保存到state
       user.value = userData
@@ -84,9 +110,8 @@ export const useAuthStore = defineStore('auth', () => {
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, tokenData.accessToken)
       localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, tokenData.refreshToken)
 
-    } catch (err) {
-      error.value = handleApiError(err)
-      throw new Error(error.value)
+    } catch (err: any) {
+      handleAuthError(err, '登录失败')
     } finally {
       isLoading.value = false
     }
@@ -101,12 +126,11 @@ export const useAuthStore = defineStore('auth', () => {
 
     try {
       // 管理员注册只返回注册成功信息，不返回token
-      await HttpClient.post(API_ENDPOINTS.AUTH.REGISTER, data)
+      await http.post(API_ENDPOINTS.AUTH.REGISTER, data)
       
       // 注册成功，但需要等待审批，不设置认证状态
-    } catch (err) {
-      error.value = handleApiError(err)
-      throw new Error(error.value)
+    } catch (err: any) {
+      handleAuthError(err, '注册失败')
     } finally {
       isLoading.value = false
     }
@@ -121,23 +145,19 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     try {
-      const response = await HttpClient.post<{ tokens: TokenPair }>(
-        API_ENDPOINTS.AUTH.REFRESH,
-        { refreshToken: tokens.value.refreshToken }
-      )
-
-      const newTokens = response.data.tokens
+      const response = await http.post(API_ENDPOINTS.AUTH.REFRESH, {
+        refreshToken: tokens.value.refreshToken
+      })
+      const newTokens = response.data.data.tokens
 
       // 更新state和localStorage
       tokens.value = newTokens
       localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, newTokens.accessToken)
       localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, newTokens.refreshToken)
 
-    } catch (err) {
-      error.value = handleApiError(err)
-      // 刷新失败，清除认证数据
+    } catch (err: any) {
       clearAuthData()
-      throw new Error(error.value)
+      handleAuthError(err, '刷新令牌失败')
     }
   }
 
@@ -151,13 +171,12 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       // 调用后端注销接口
       if (tokens.value?.refreshToken) {
-        await HttpClient.post(API_ENDPOINTS.AUTH.LOGOUT, {
+        await http.post(API_ENDPOINTS.AUTH.LOGOUT, {
           refreshToken: tokens.value.refreshToken
         })
       }
-    } catch (err) {
+    } catch {
       // 注销接口失败不影响本地清理
-      console.warn('Logout API failed:', handleApiError(err))
     } finally {
       // 无论接口是否成功，都清理本地数据
       clearAuthData()
@@ -177,13 +196,10 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const response = await HttpClient.get<PendingAdmin[]>(
-        API_ENDPOINTS.AUTH.PENDING
-      )
-      pendingAdmins.value = response.data
-    } catch (err) {
-      error.value = handleApiError(err)
-      throw new Error(error.value)
+      const response = await http.get(API_ENDPOINTS.AUTH.PENDING)
+      pendingAdmins.value = response.data.data
+    } catch (err: any) {
+      handleAuthError(err, '获取待审批管理员列表失败')
     } finally {
       isLoading.value = false
     }
@@ -192,7 +208,7 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * 审批管理员申请（仅超级管理员可用）
    */
-  const approveAdmin = async (adminId: string, reason?: string): Promise<AdminApprovalResponse> => {
+  const approveAdmin = async (adminId: string, reason?: string): Promise<AdminApprovalResponse | undefined> => {
     if (!canApproveAdmins.value) {
       throw new Error('Only super admin can approve admins')
     }
@@ -201,7 +217,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const response = await HttpClient.post<AdminApprovalResponse>(
+      const response = await http.post(
         `${API_ENDPOINTS.AUTH.APPROVE}/${adminId}`,
         { reason }
       )
@@ -209,10 +225,9 @@ export const useAuthStore = defineStore('auth', () => {
       // 从待审批列表中移除该管理员
       pendingAdmins.value = pendingAdmins.value.filter(admin => admin.id !== adminId)
 
-      return response.data
-    } catch (err) {
-      error.value = handleApiError(err)
-      throw new Error(error.value)
+      return response.data.data
+    } catch (err: any) {
+      handleAuthError(err, '审批管理员失败')
     } finally {
       isLoading.value = false
     }
@@ -221,7 +236,7 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * 拒绝管理员申请（仅超级管理员可用）
    */
-  const rejectAdmin = async (adminId: string, reason: string): Promise<AdminApprovalResponse> => {
+  const rejectAdmin = async (adminId: string, reason: string): Promise<AdminApprovalResponse | undefined> => {
     if (!canApproveAdmins.value) {
       throw new Error('Only super admin can reject admins')
     }
@@ -234,7 +249,7 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      const response = await HttpClient.put<AdminApprovalResponse>(
+      const response = await http.put(
         `${API_ENDPOINTS.AUTH.REJECT}/${adminId}`,
         { reason }
       )
@@ -242,10 +257,9 @@ export const useAuthStore = defineStore('auth', () => {
       // 从待审批列表中移除该管理员
       pendingAdmins.value = pendingAdmins.value.filter(admin => admin.id !== adminId)
 
-      return response.data
-    } catch (err) {
-      error.value = handleApiError(err)
-      throw new Error(error.value)
+      return response.data.data
+    } catch (err: any) {
+      handleAuthError(err, '拒绝管理员申请失败')
     } finally {
       isLoading.value = false
     }

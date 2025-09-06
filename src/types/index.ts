@@ -40,7 +40,7 @@ export interface User {
   lastLoginAt?: string
 }
 
-export interface AdminUser extends User {
+export interface AdminUser extends Omit<User, 'status'> {
   role: 'SUPER_ADMIN' | 'ADMIN'
   status: 'PENDING' | 'ACTIVE' | 'INACTIVE' | 'REJECTED'
   appliedAt: string
